@@ -110,20 +110,22 @@ opencode picks up Markdown-frontmatter files from your bind-mount:
 
 | Type                              | Path under `data/opencode/config/`   |
 | --------------------------------- | ------------------------------------ |
-| Agents (persona + tool set)       | `.config/opencode/agent/*.md`        |
-| Slash commands (reusable prompts) | `.config/opencode/command/*.md`      |
+| Agents (persona + tool set)       | `.config/opencode/agents/*.md`       |
+| Slash commands (reusable prompts) | `.config/opencode/commands/*.md`     |
 
 Starter templates live in [`examples/opencode/`](examples/opencode/). Copy
 the ones you want into the bind-mount:
 
 ```bash
-mkdir -p data/opencode/config/.config/opencode/agent \
-         data/opencode/config/.config/opencode/command
-cp examples/opencode/agents/*.md   data/opencode/config/.config/opencode/agent/
-cp examples/opencode/commands/*.md data/opencode/config/.config/opencode/command/
+mkdir -p data/opencode/config/.config/opencode/agents \
+         data/opencode/config/.config/opencode/commands
+cp examples/opencode/agents/*.md   data/opencode/config/.config/opencode/agents/
+cp examples/opencode/commands/*.md data/opencode/config/.config/opencode/commands/
 ```
 
-In the opencode TUI, `/agents` switches personas and `/<name>` runs a command.
+In the opencode TUI, Tab switches primary agents and `/<name>` runs a command.
+For a deeper tour of agents, MCP, LSP, plugins and slash commands, see
+[`docs/opencode-guide.md`](docs/opencode-guide.md).
 
 ## Adding an SSH key for git over SSH
 
