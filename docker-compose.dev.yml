@@ -5,7 +5,7 @@
 #
 #   docker compose -f docker-compose.dev.yml up --build
 #
-# Override OPENCODE_VERSION via:
+# Override OPENCODE_VERSION via .env or shell:
 #   OPENCODE_VERSION=1.15.10 docker compose -f docker-compose.dev.yml up --build
 
 services:
@@ -17,11 +17,12 @@ services:
     image: docker-opencode:dev
     container_name: opencode-dev
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
     ports:
       - "4096:4096"
     volumes:

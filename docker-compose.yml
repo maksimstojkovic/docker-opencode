@@ -6,19 +6,21 @@
 #   Docker volumes are used; you can back up the whole tree with one rsync.
 # - No ports are published to the host. SWAG resolves "opencode:4096" via the
 #   shared docker network and proxies TLS-terminated traffic to it.
+# - Configuration lives in two places:
+#     * .env (gitignored)   — secrets and per-deployment values; see .env.example
+#     * environment: block  — structural defaults you rarely change
 
 services:
   opencode:
     image: ghcr.io/maksimstojkovic/docker-opencode:latest
     container_name: opencode
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Australia/Melbourne
-      # OpenRouter is the default model provider. Put the key in a .env file
-      # next to this compose file (gitignored), or supply via your secrets store.
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Australia/Melbourne}
     volumes:
       # opencode config, auth.json, session history, cache
       - ./data/opencode/config:/config
@@ -27,10 +29,3 @@ services:
       # Drop a purpose-specific SSH key file (and known_hosts) in here for
       # git-over-SSH. Read-only mount so the container can't tamper with keys.
       - ./data/opencode/ssh:/ssh:ro
-    networks:
-      - swag
-
-networks:
-  # The network your SWAG container already joins. Adjust the name to match.
-  swag:
-    external: true
