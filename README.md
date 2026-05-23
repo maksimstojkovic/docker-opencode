@@ -75,8 +75,7 @@ opencode web listening on http://0.0.0.0:4096
 OpenRouter is the default model provider. The container reads the key from the
 `OPENROUTER_API_KEY` environment variable (passed via `.env` in
 `docker-compose.yml`), and a seed `opencode.json` is written on first start
-pointing at `openrouter/anthropic/claude-sonnet-4.5`. Change the model by
-editing `data/opencode/config/.config/opencode/opencode.json` on the host.
+(see [Customising the default model](#customising-the-default-model) below).
 
 For other providers that don't use env-var auth (e.g., OAuth-only ones, or
 direct Anthropic/OpenAI accounts), run the interactive login once:
@@ -87,6 +86,44 @@ docker exec -it opencode opencode auth login
 
 Credentials persist in `data/opencode/config/.local/share/opencode/auth.json`
 and survive container restarts/upgrades.
+
+## Customising the default model
+
+The seed `opencode.json` written on first start uses:
+
+| Setting       | Default                                       | Override env var          |
+| ------------- | --------------------------------------------- | ------------------------- |
+| `model`       | `openrouter/moonshotai/kimi-k2.6`             | `OPENROUTER_MODEL`        |
+| `small_model` | `openrouter/meta-llama/llama-3.1-8b-instruct` | `OPENROUTER_SMALL_MODEL`  |
+
+`model` is used for chat. `small_model` runs cheap housekeeping (session
+titles, context summarisation). Set the env overrides in `.env` *before* the
+first start. Any id listed on [openrouter.ai/models](https://openrouter.ai/models)
+works.
+
+After the seed file exists, the env vars are ignored — edit
+`data/opencode/config/.config/opencode/opencode.json` directly to change models.
+
+## Custom agents and slash commands
+
+opencode picks up Markdown-frontmatter files from your bind-mount:
+
+| Type                              | Path under `data/opencode/config/`   |
+| --------------------------------- | ------------------------------------ |
+| Agents (persona + tool set)       | `.config/opencode/agent/*.md`        |
+| Slash commands (reusable prompts) | `.config/opencode/command/*.md`      |
+
+Starter templates live in [`examples/opencode/`](examples/opencode/). Copy
+the ones you want into the bind-mount:
+
+```bash
+mkdir -p data/opencode/config/.config/opencode/agent \
+         data/opencode/config/.config/opencode/command
+cp examples/opencode/agents/*.md   data/opencode/config/.config/opencode/agent/
+cp examples/opencode/commands/*.md data/opencode/config/.config/opencode/command/
+```
+
+In the opencode TUI, `/agents` switches personas and `/<name>` runs a command.
 
 ## Adding an SSH key for git over SSH
 
@@ -168,6 +205,14 @@ custom version via the Actions UI.
 │           └── user/contents.d/svc-opencode  # Registers the service
 ├── swag/
 │   └── opencode.subdomain.conf.sample        # Drop into SWAG proxy-confs/
+├── examples/
+│   └── opencode/
+│       ├── agents/                           # Starter agent (persona) templates
+│       │   ├── chat.md
+│       │   └── agent.md
+│       └── commands/                         # Starter slash command templates
+│           ├── tldr.md
+│           └── research.md
 ├── scripts/
 │   └── check-upstream.sh                     # Compares upstream vs .opencode-version
 ├── .github/workflows/

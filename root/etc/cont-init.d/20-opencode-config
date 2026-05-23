@@ -19,13 +19,20 @@ if [ -d /ssh ] && [ -n "$(ls -A /ssh 2>/dev/null || true)" ]; then
     fi
 fi
 
+# Default model selections — override via env (see .env.example).
+# Only used on first seed; edit opencode.json directly to change later.
+# Any OpenRouter-served model id works — https://openrouter.ai/models
+: "${OPENROUTER_MODEL:=moonshotai/kimi-k2.6}"
+: "${OPENROUTER_SMALL_MODEL:=meta-llama/llama-3.1-8b-instruct}"
+
 # Seed a minimal opencode.json pointing at OpenRouter if no config exists yet.
 # Users can override by `opencode auth login` or by editing this file directly.
 if [ ! -f "${CONFIG_DIR}/opencode.json" ]; then
-    cat > "${CONFIG_DIR}/opencode.json" <<'JSON'
+    cat > "${CONFIG_DIR}/opencode.json" <<JSON
 {
-  "$schema": "https://opencode.ai/config.json",
-  "model": "openrouter/anthropic/claude-sonnet-4.5",
+  "\$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/${OPENROUTER_MODEL}",
+  "small_model": "openrouter/${OPENROUTER_SMALL_MODEL}",
   "provider": {
     "openrouter": {
       "options": {

@@ -20,16 +20,20 @@ ENV LANG=C.UTF-8 \
 # - shadow:        provides usermod/groupmod (alpine's busybox versions lack the -o flag)
 # - bash:          opencode and various agent tool calls assume bash exists
 # - python3 + py3-matplotlib/py3-pillow: chart and image artifact generation
+#   (no py3-pip — apk packages cover what we need; runtime pip install on
+#    musl needs gcc/musl-dev and is rarely worth it)
 # - imagemagick, graphviz: image conversion + diagram rendering
 # - git + openssh-client + ca-certificates: repo operations over SSH/HTTPS
 # - jq + ripgrep + fd: data wrangling tools the agent reaches for constantly
-RUN apk add --no-cache \
+RUN --mount=type=cache,target=/var/cache/apk,sharing=locked,id=apk-${TARGETARCH} \
+    --mount=type=cache,target=/etc/apk/cache,sharing=locked,id=apkcache-${TARGETARCH} \
+    apk add \
         ca-certificates curl tar xz \
         bash shadow tzdata \
         git openssh-client \
         jq ripgrep fd \
         imagemagick graphviz \
-        python3 py3-pip py3-matplotlib py3-pillow
+        python3 py3-matplotlib py3-pillow
 
 # s6-overlay (linuxserver.io's init system of choice) — proper PID 1,
 # parallel service supervision, and the PUID/PGID hook pattern.
@@ -78,4 +82,11 @@ LABEL org.opencontainers.image.title="docker-opencode" \
 
 EXPOSE 4096
 VOLUME ["/config", "/workspace", "/ssh"]
+
+# Probe opencode's API health endpoint. wget is part of busybox so no extra
+# install is needed. --start-period gives s6 + opencode time to come up on
+# slower hardware (Pi 4 cold start ~10-15s).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD wget -q --spider --tries=1 http://127.0.0.1:4096/global/health || exit 1
+
 ENTRYPOINT ["/init"]
