@@ -185,46 +185,6 @@ automatically on pushes to `main` that touch the Dockerfile, `root/`,
 `scripts/`, or `.opencode-version`. It can also be triggered manually with a
 custom version via the Actions UI.
 
-## Repository layout
-
-```
-.
-├── Dockerfile                                # alpine + s6-overlay + opencode
-├── docker-compose.yml                        # Pi / production sample (uses GHCR)
-├── docker-compose.dev.yml                    # Local build + port-publish for testing
-├── root/                                     # Copied into the image at /
-│   └── etc/
-│       ├── cont-init.d/                      # PUID/PGID fixup + config seeding
-│       │   ├── 10-fix-perms
-│       │   └── 20-opencode-config
-│       └── s6-overlay/s6-rc.d/
-│           ├── svc-opencode/                 # Long-running opencode web service
-│           │   ├── type
-│           │   ├── run
-│           │   └── dependencies.d/base
-│           └── user/contents.d/svc-opencode  # Registers the service
-├── swag/
-│   └── opencode.subdomain.conf.sample        # Drop into SWAG proxy-confs/
-├── examples/
-│   └── opencode/
-│       ├── agents/                           # Starter agent (persona) templates
-│       │   ├── chat.md
-│       │   └── agent.md
-│       └── commands/                         # Starter slash command templates
-│           ├── tldr.md
-│           └── research.md
-├── scripts/
-│   └── check-upstream.sh                     # Compares upstream vs .opencode-version
-├── .github/workflows/
-│   ├── build.yml                             # Multi-arch build + push to GHCR
-│   └── upstream-check.yml                    # Daily cron + workflow_dispatch
-├── .opencode-version                         # Tracks last successfully built upstream
-├── .env.example
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
 ## Tags
 
 | Tag                  | What it points to                                 |
@@ -234,8 +194,3 @@ custom version via the Actions UI.
 | `:<major>.<minor>.<patch>` | Pin to a specific opencode release (e.g. `:1.15.10`) |
 | `:sha-<7-char>`      | Pin to a specific commit of this repo             |
 
-## Credits
-
-- [opencode](https://github.com/anomalyco/opencode) — the upstream agent
-- [linuxserver.io](https://www.linuxserver.io/) — SWAG + the PUID/PGID/s6 pattern
-- [just-containers/s6-overlay](https://github.com/just-containers/s6-overlay)
