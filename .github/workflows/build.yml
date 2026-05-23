@@ -74,11 +74,22 @@ jobs:
           # Lowercase the repo path — GHCR rejects uppercase.
           repo_lc="$(echo "${repo}" | tr '[:upper:]' '[:lower:]')"
           short_sha="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+
+          # Validate the version looks like semver (major.minor.patch); skip
+          # the minor-only tag if it doesn't, to avoid emitting nonsense like
+          # ":1" from a malformed input.
+          tags=()
+          tags+=("${repo_lc}:${v}")
+          if printf '%s' "${v}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            minor="${v%.*}"
+            tags+=("${repo_lc}:${minor}")
+          fi
+          tags+=("${repo_lc}:latest")
+          tags+=("${repo_lc}:sha-${short_sha}")
+
           {
             echo "tags<<EOF"
-            echo "${repo_lc}:${v}"
-            echo "${repo_lc}:latest"
-            echo "${repo_lc}:sha-${short_sha}"
+            printf '%s\n' "${tags[@]}"
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 

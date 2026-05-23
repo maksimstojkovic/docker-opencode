@@ -185,7 +185,8 @@ custom version via the Actions UI.
 | Tag                  | What it points to                                 |
 | -------------------- | ------------------------------------------------- |
 | `:latest`            | Most recent successful build (any `main` commit)  |
-| `:<opencode-version>`| Pin to a specific opencode release (e.g. `1.15.10`) |
+| `:<major>.<minor>`   | Floats forward across patches (e.g. `:1.15` → currently `1.15.10`, would move to `1.15.11` on next bump) |
+| `:<major>.<minor>.<patch>` | Pin to a specific opencode release (e.g. `:1.15.10`) |
 | `:sha-<7-char>`      | Pin to a specific commit of this repo             |
 
 ## Credits

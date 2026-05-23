@@ -20,7 +20,7 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      - TZ=${TZ:-Australia/Melbourne}
+      - TZ=${TZ:-Australia/Sydney}
     volumes:
       # opencode config, auth.json, session history, cache
       - ./data/opencode/config:/config
