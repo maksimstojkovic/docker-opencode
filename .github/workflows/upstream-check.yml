@@ -1,0 +1,70 @@
+name: upstream-check
+
+on:
+  schedule:
+    # Daily at 06:17 UTC (jittered to avoid the top-of-hour API rush).
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Build even if no version change is detected'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: upstream-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to commit the .opencode-version bump
+      actions: write    # to dispatch the build workflow
+    outputs:
+      latest_version: ${{ steps.check.outputs.latest_version }}
+      update_needed:  ${{ steps.check.outputs.update_needed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check upstream for new release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/check-upstream.sh
+
+      - name: Bump .opencode-version
+        if: steps.check.outputs.update_needed == 'true'
+        run: |
+          echo "${{ steps.check.outputs.latest_version }}" > .opencode-version
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .opencode-version
+          git commit -m "chore: bump opencode to v${{ steps.check.outputs.latest_version }}"
+          git push
+
+      # GitHub Actions deliberately suppresses workflow triggers from pushes
+      # made with the auto-provided GITHUB_TOKEN (anti-loop safety), so the
+      # build.yml `push` trigger won't fire on the commit above. Dispatch it
+      # explicitly here. Also handles the `force_build` no-change case.
+      - name: Dispatch build workflow
+        if: steps.check.outputs.update_needed == 'true' || inputs.force_build == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run build.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${{ github.ref_name }}" \
+            -f opencode_version="${{ steps.check.outputs.latest_version }}"
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Upstream check"
+            echo ""
+            echo "- Current: ${{ steps.check.outputs.current_version }}"
+            echo "- Latest:  ${{ steps.check.outputs.latest_version }}"
+            echo "- Update needed: ${{ steps.check.outputs.update_needed }}"
+          } >> "${GITHUB_STEP_SUMMARY}"

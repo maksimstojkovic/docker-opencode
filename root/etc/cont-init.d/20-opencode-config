@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+# Seed first-run opencode state under /config (the persistent bind-mount).
+# Idempotent: never overwrites user edits, only fills in missing scaffolding.
+
+set -eu
+
+CONFIG_DIR="/config/.config/opencode"
+DATA_DIR="/config/.local/share/opencode"
+STATE_DIR="/config/.local/state/opencode"
+CACHE_DIR="/config/.cache/opencode"
+
+mkdir -p "${CONFIG_DIR}" "${DATA_DIR}" "${STATE_DIR}" "${CACHE_DIR}"
+
+# Wire the /ssh bind-mount into the opencode user's home so git-over-ssh works
+# transparently. Only create the symlink when /ssh actually has key material.
+if [ -d /ssh ] && [ -n "$(ls -A /ssh 2>/dev/null || true)" ]; then
+    if [ ! -e /config/.ssh ]; then
+        ln -s /ssh /config/.ssh
+    fi
+fi
+
+# Seed a minimal opencode.json pointing at OpenRouter if no config exists yet.
+# Users can override by `opencode auth login` or by editing this file directly.
+if [ ! -f "${CONFIG_DIR}/opencode.json" ]; then
+    cat > "${CONFIG_DIR}/opencode.json" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/anthropic/claude-sonnet-4.5",
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      }
+    }
+  }
+}
+JSON
+fi
+
+chown -R opencode:opencode /config

@@ -1,0 +1,52 @@
+## Version 2026/05/23
+# opencode reverse-proxy template for SWAG (linuxserver.io).
+#
+# 1. Copy this file into your SWAG container at
+#       /config/nginx/proxy-confs/opencode.subdomain.conf
+#    (remove the .sample suffix)
+# 2. Make sure your DNS for opencode.<your-domain> resolves to the SWAG host
+#    and that you have a wildcard cert / SAN covering opencode.<your-domain>.
+# 3. Optionally enable basic auth (see commented block below) or fronted
+#    Authelia / Authentik.
+# 4. `docker restart swag`
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    server_name opencode.*;
+
+    include /config/nginx/ssl.conf;
+
+    # opencode streams responses incrementally; uploads can be small but file
+    # attachments may be larger — disable nginx's body size cap.
+    client_max_body_size 0;
+
+    # --- Optional: HTTP basic auth ---
+    # Generate the htpasswd file from inside the SWAG container:
+    #   docker exec -it swag htpasswd -c /config/nginx/.htpasswd <username>
+    # Then uncomment the next two lines.
+    # auth_basic "opencode";
+    # auth_basic_user_file /config/nginx/.htpasswd;
+
+    location / {
+        include /config/nginx/proxy.conf;
+        include /config/nginx/resolver.conf;
+
+        set $upstream_app opencode;
+        set $upstream_port 4096;
+        set $upstream_proto http;
+        proxy_pass $upstream_proto://$upstream_app:$upstream_port;
+
+        # opencode web uses WebSockets for streaming tokens + tool events.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # LLM responses can run for several minutes when the agent is working
+        # through a long tool chain. Don't let nginx kill the connection.
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_buffering off;
+    }
+}

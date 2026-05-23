@@ -1,0 +1,36 @@
+# Sample docker-compose for self-hosting opencode behind SWAG on a Raspberry Pi.
+# Copy this file next to your existing SWAG compose stack (or merge it in),
+# then `docker compose up -d`.
+#
+# - All persistent state lives under ./data/opencode/ on the host. No anonymous
+#   Docker volumes are used; you can back up the whole tree with one rsync.
+# - No ports are published to the host. SWAG resolves "opencode:4096" via the
+#   shared docker network and proxies TLS-terminated traffic to it.
+
+services:
+  opencode:
+    image: ghcr.io/maksimstojkovic/docker-opencode:latest
+    container_name: opencode
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Melbourne
+      # OpenRouter is the default model provider. Put the key in a .env file
+      # next to this compose file (gitignored), or supply via your secrets store.
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      # opencode config, auth.json, session history, cache
+      - ./data/opencode/config:/config
+      # Where the agent can read/write project files
+      - ./data/opencode/workspace:/workspace
+      # Drop a purpose-specific SSH key file (and known_hosts) in here for
+      # git-over-SSH. Read-only mount so the container can't tamper with keys.
+      - ./data/opencode/ssh:/ssh:ro
+    networks:
+      - swag
+
+networks:
+  # The network your SWAG container already joins. Adjust the name to match.
+  swag:
+    external: true

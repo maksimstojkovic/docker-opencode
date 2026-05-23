@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# Reconcile the in-image opencode user UID/GID with the host's PUID/PGID,
+# then chown the persistent bind-mounts so the agent can read/write them.
+
+set -eu
+
+# Update opencode user/group to requested IDs. -o allows non-unique (matches
+# linuxserver.io behaviour where root or another user already holds the ID).
+if [ "$(id -u opencode)" != "${PUID}" ]; then
+    usermod -o -u "${PUID}" opencode
+fi
+if [ "$(id -g opencode)" != "${PGID}" ]; then
+    groupmod -o -g "${PGID}" opencode
+fi
+
+chown -R opencode:opencode /config /workspace
+
+# /ssh is the user-supplied SSH key directory. May be mounted read-only, so
+# only adjust permissions when writable.
+if [ -d /ssh ] && [ -w /ssh ]; then
+    chmod 700 /ssh
+    find /ssh -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' -exec chmod 600 {} \;
+    find /ssh -maxdepth 1 -type f \( -name '*.pub' -o -name 'known_hosts' -o -name 'config' \) -exec chmod 644 {} \;
+fi

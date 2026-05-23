@@ -1,0 +1,19 @@
+# Local environment overrides
+.env
+.env.*
+!.env.example
+
+# Local data populated by docker-compose bind-mounts
+data/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+.idea/
+.vscode/
+
+# Plan and memory scratch — these live outside the repo, but guard against
+# accidental copy-pastes.
+*.plan.md

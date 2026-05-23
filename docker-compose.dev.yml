@@ -1,0 +1,30 @@
+# Local dev compose — builds the image from this checkout and exposes port
+# 4096 directly to the host so you can browse to http://localhost:4096 without
+# SWAG. Use this on your Windows/Linux dev box for smoke-testing before pushing
+# images that the Pi will pull.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Override OPENCODE_VERSION via:
+#   OPENCODE_VERSION=1.15.10 docker compose -f docker-compose.dev.yml up --build
+
+services:
+  opencode:
+    build:
+      context: .
+      args:
+        OPENCODE_VERSION: ${OPENCODE_VERSION:-1.15.10}
+    image: docker-opencode:dev
+    container_name: opencode-dev
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    ports:
+      - "4096:4096"
+    volumes:
+      - ./data/opencode/config:/config
+      - ./data/opencode/workspace:/workspace
+      - ./data/opencode/ssh:/ssh:ro
