@@ -29,23 +29,12 @@ else
 fi
 export PS1
 
-# opencode's web terminal exec's /bin/bash directly (bypassing the user's
-# login shell from /etc/passwd), so /usr/local/bin/opencode-shell never
-# runs for web-spawned terminals. This rc file IS sourced (via the
-# /etc/bash.bashrc -> profile.d chain for interactive non-login bash),
-# so it's the only reliable place to handle clear + cwd.
-case "${TERM:-dumb}" in
-    dumb|screen*|tmux*) ;;
-    *)
-        if [ -t 1 ] && [ -z "${TMUX:-}" ] && [ -z "${STY:-}" ]; then
-            # RIS (full reset) — masks the ghost text opencode leaks into
-            # freshly opened "+" tabs. Heavier than `clear` but needed:
-            # the bug also leaves termios in a weird state (\n without \r),
-            # and RIS resets that too.
-            printf '\033c'
-        fi
-        ;;
-esac
+# TEMP: opencode's web terminal exec's /bin/bash directly (bypassing the
+# user's login shell from /etc/passwd) and the previous tab's buffer leaks
+# into freshly opened "+" tabs. The RIS (\033c) reset that used to live here
+# is removed to test whether the Debian/glibc switch resolves the issue.
+# Restore with: git checkout -- root/etc/profile.d/00-opencode.sh
+#               git checkout -- root/usr/local/bin/opencode-shell
 
 # Land in /workspace when no meaningful cwd was passed. Respect any path
 # under /workspace (per-project terminals) so opening a project in opencode
