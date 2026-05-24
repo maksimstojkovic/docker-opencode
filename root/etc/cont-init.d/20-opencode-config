@@ -26,12 +26,18 @@ fi
 
 # Default model selections — override via env (see .env.example).
 # Only used on first seed; edit opencode.json directly to change later.
-# Any OpenRouter-served model id works — https://openrouter.ai/models
+# OPENROUTER_MODEL must be one of the model IDs in the seeded allow-list
+# below, or you'll get "model not enabled" errors. To use a model outside
+# the curated set, add it to provider.openrouter.models after first boot.
 : "${OPENROUTER_MODEL:=moonshotai/kimi-k2.6}"
 : "${OPENROUTER_SMALL_MODEL:=meta-llama/llama-3.1-8b-instruct}"
 
 # Seed a minimal opencode.json pointing at OpenRouter if no config exists yet.
-# Users can override by `opencode auth login` or by editing this file directly.
+# The provider.openrouter.models block acts as an allow-list — only these
+# models appear in the chat picker. Frontier vendors use OpenRouter's
+# `-latest` aliases so the set auto-tracks new releases without redeploys.
+# small_model uses the configured ID directly (not picker-gated) so cheap
+# housekeeping (session titles, summarisation) keeps working off-list.
 if [ ! -f "${CONFIG_DIR}/opencode.json" ]; then
     cat > "${CONFIG_DIR}/opencode.json" <<JSON
 {
@@ -42,6 +48,14 @@ if [ ! -f "${CONFIG_DIR}/opencode.json" ]; then
     "openrouter": {
       "options": {
         "apiKey": "{env:OPENROUTER_API_KEY}"
+      },
+      "models": {
+        "moonshotai/kimi-k2.6":               {},
+        "z-ai/glm-5.1":                       {},
+        "anthropic/claude-sonnet-latest":     {},
+        "anthropic/claude-opus-latest":       {},
+        "google/gemini-flash-latest":         {},
+        "google/gemini-pro-latest":           {}
       }
     }
   }
