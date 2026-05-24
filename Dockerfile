@@ -78,7 +78,14 @@ RUN addgroup -g 1000 opencode \
     && adduser -D -u 1000 -G opencode -h /config -s /usr/local/bin/opencode-shell opencode \
     && mkdir -p /config /workspace /ssh \
     && chown -R opencode:opencode /config /workspace \
-    && chmod +x /etc/cont-init.d/* /etc/s6-overlay/s6-rc.d/svc-opencode/run /usr/local/bin/opencode-shell
+    # Mark scripts executable by directory pattern so adding new cont-init
+    # hooks, s6 services, opencode-* wrappers, or MCP servers doesn't
+    # require Dockerfile changes — just drop the file under root/ and rebuild.
+    && chmod +x \
+        /etc/cont-init.d/* \
+        /etc/s6-overlay/s6-rc.d/*/run \
+        /usr/local/bin/opencode-* \
+        /usr/local/lib/opencode-mcp/*
 
 # OCI labels for the registry.
 LABEL org.opencontainers.image.title="docker-opencode" \

@@ -58,6 +58,14 @@ if [ ! -f "${CONFIG_DIR}/opencode.json" ]; then
         "google/gemini-pro-latest":           {}
       }
     }
+  },
+  "mcp": {
+    "imagegen": {
+      "type": "local",
+      "command": ["python3", "/usr/local/lib/opencode-mcp/imagegen.py"],
+      "environment": { "OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}" },
+      "enabled": true
+    }
   }
 }
 JSON
