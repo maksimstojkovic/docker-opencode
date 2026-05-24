@@ -1,0 +1,15 @@
+#!/bin/sh
+# Pre-shell wrapper invoked as opencode user's login shell.
+#
+# Purpose: opencode's web terminal leaks the previous tab's rendered
+# buffer into a freshly opened "+" tab. Bash startup + profile loading
+# takes 50-100ms, long enough for the ghost text to flash before our
+# profile.d `clear` lands. Issuing RIS (\033c — full terminal reset)
+# as the launcher's first action gets the clear escape down the PTY
+# within ~5ms of allocation, eliminating the flash.
+#
+# Guarded on `-t 1` so non-tty invocations (scp, sftp, exec without
+# -t) don't emit stray escape bytes into pipes.
+[ -t 1 ] && printf '\033c'
+
+exec /bin/bash "$@"

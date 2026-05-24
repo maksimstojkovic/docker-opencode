@@ -72,11 +72,13 @@ COPY root/ /
 
 # Create the runtime user. UID/GID get reconciled to PUID/PGID at container
 # start by /etc/cont-init.d/10-fix-perms; defaults match linuxserver.io convention.
+# Login shell is the opencode-shell wrapper (clears the PTY before exec'ing
+# bash) — see /usr/local/bin/opencode-shell for the why.
 RUN addgroup -g 1000 opencode \
-    && adduser -D -u 1000 -G opencode -h /config -s /bin/bash opencode \
+    && adduser -D -u 1000 -G opencode -h /config -s /usr/local/bin/opencode-shell opencode \
     && mkdir -p /config /workspace /ssh \
     && chown -R opencode:opencode /config /workspace \
-    && chmod +x /etc/cont-init.d/* /etc/s6-overlay/s6-rc.d/svc-opencode/run
+    && chmod +x /etc/cont-init.d/* /etc/s6-overlay/s6-rc.d/svc-opencode/run /usr/local/bin/opencode-shell
 
 # OCI labels for the registry.
 LABEL org.opencontainers.image.title="docker-opencode" \
