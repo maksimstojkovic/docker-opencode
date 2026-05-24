@@ -19,6 +19,10 @@ ENV LANG=C.UTF-8 \
 # Core runtime + artifact tooling.
 # - shadow:        provides usermod/groupmod (alpine's busybox versions lack the -o flag)
 # - bash:          opencode and various agent tool calls assume bash exists
+# - gcompat:       glibc compatibility shim. Bun (opencode's runtime) extracts a
+#                  helper .so at runtime that references glibc-only symbols like
+#                  gnu_get_libc_version; without gcompat, dlopen fails and FFI-
+#                  dependent features (session titles, summarisation) silently die.
 # - python3 + py3-matplotlib/py3-pillow: chart and image artifact generation
 #   (no py3-pip — apk packages cover what we need; runtime pip install on
 #    musl needs gcc/musl-dev and is rarely worth it)
@@ -29,7 +33,7 @@ RUN --mount=type=cache,target=/var/cache/apk,sharing=locked,id=apk-${TARGETARCH}
     --mount=type=cache,target=/etc/apk/cache,sharing=locked,id=apkcache-${TARGETARCH} \
     apk add \
         ca-certificates curl tar xz \
-        bash shadow tzdata \
+        bash shadow tzdata gcompat \
         git openssh-client \
         jq ripgrep fd \
         imagemagick graphviz \
