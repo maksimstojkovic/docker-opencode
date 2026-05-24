@@ -90,7 +90,15 @@ VOLUME ["/config", "/workspace", "/ssh"]
 # Probe opencode's API health endpoint. wget is part of busybox so no extra
 # install is needed. --start-period gives s6 + opencode time to come up on
 # slower hardware (Pi 4 cold start ~10-15s).
+#
+# URL-embedded credentials let the probe authenticate when OPENCODE_SERVER_PASSWORD
+# is set. /global/health is NOT exempt from opencode's basic-auth middleware, so a
+# password-protected instance returns 401 to an unauthenticated probe and the
+# container would be marked unhealthy. When the password is unset, opencode skips
+# auth entirely and the empty creds are ignored.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD wget -q --spider --tries=1 http://127.0.0.1:4096/global/health || exit 1
+    CMD wget -q --spider --tries=1 \
+        "http://${OPENCODE_SERVER_USERNAME:-opencode}:${OPENCODE_SERVER_PASSWORD:-}@127.0.0.1:4096/global/health" \
+        || exit 1
 
 ENTRYPOINT ["/init"]

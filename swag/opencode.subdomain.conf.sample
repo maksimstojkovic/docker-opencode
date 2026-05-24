@@ -28,6 +28,10 @@ server {
     # Then uncomment the next two lines.
     # auth_basic "opencode";
     # auth_basic_user_file /config/nginx/.htpasswd;
+    #
+    # If you ALSO set OPENCODE_SERVER_PASSWORD in the container, use the same
+    # username/password here — both layers validate the single Authorization
+    # header the browser sends.
 
     location / {
         include /config/nginx/proxy.conf;

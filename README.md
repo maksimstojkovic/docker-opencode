@@ -70,6 +70,28 @@ opencode web listening on http://0.0.0.0:4096
 
 4. Browse to `https://opencode.<your-domain>`.
 
+## Protecting opencode itself with a password (optional)
+
+By default opencode trusts whatever can reach `:4096`. The image expects SWAG
+(or another reverse proxy) to handle auth at the edge, but you can also turn
+on opencode's built-in HTTP basic auth — useful if you want defence-in-depth,
+expose the container directly on a LAN, or skip SWAG basic auth entirely.
+
+Set in `.env`:
+
+```dotenv
+OPENCODE_SERVER_PASSWORD=<a-long-random-string>
+# OPENCODE_SERVER_USERNAME=opencode   # optional, default is "opencode"
+```
+
+Then `docker compose up -d` to apply. The container's healthcheck reads the
+same env vars, so `docker ps` will continue to report `healthy`.
+
+If you also enable basic auth in SWAG (`auth_basic` in the proxy config), use
+**the same** username/password in both — browsers send a single
+`Authorization` header that SWAG validates and forwards unchanged to opencode.
+Mismatched credentials will fail at whichever layer disagrees.
+
 ## First-run auth (OpenRouter)
 
 OpenRouter is the default model provider. The container reads the key from the
