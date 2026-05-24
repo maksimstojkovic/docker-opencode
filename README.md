@@ -7,7 +7,7 @@ a Raspberry Pi 4 as a phone/browser-accessible replacement for the
 ChatGPT/Claude.ai web chat experience, with OpenRouter as the default LLM
 provider.
 
-- **Base:** `alpine:3.20` with s6-overlay (linuxserver.io pattern)
+- **Base:** `debian:trixie-slim` with s6-overlay (linuxserver.io pattern)
 - **Runs:** `opencode web --hostname 0.0.0.0 --port 4096`
 - **Auth:** none in-container — SWAG (htpasswd/Authelia) handles it at the edge
 - **Bundled tooling:** Python+matplotlib+pillow, ImageMagick, Graphviz, git,

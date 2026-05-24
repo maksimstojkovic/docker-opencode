@@ -55,7 +55,7 @@ fi
 if [ "${update_needed}" = "true" ]; then
     missing=0
     for arch in arm64 x64; do
-        asset_url="https://github.com/${UPSTREAM_REPO}/releases/download/v${latest_version}/opencode-linux-${arch}-musl.tar.gz"
+        asset_url="https://github.com/${UPSTREAM_REPO}/releases/download/v${latest_version}/opencode-linux-${arch}.tar.gz"
         if ! curl -fsI -o /dev/null "${asset_url}"; then
             echo "WARN: expected asset not yet available: ${asset_url}" >&2
             missing=$((missing + 1))

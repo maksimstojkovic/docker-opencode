@@ -1,14 +1,6 @@
 #!/command/with-contenv sh
 # Launch opencode's web interface bound to all interfaces inside the container.
 # SWAG (or whatever reverse proxy sits in front) handles TLS and auth.
-#
-# LD_PRELOAD note: installing gcompat alone is not enough. Bun extracts a
-# glibc-linked helper .so to /tmp at runtime and dlopens it via musl's loader,
-# which doesn't know about gcompat's symbols. Preloading libgcompat.so.0 into
-# the bun process makes gnu_get_libc_version (and friends) resolvable when the
-# helper is relocated. Scoped to opencode so other container processes keep
-# pure-musl behaviour.
 cd /workspace
 exec s6-setuidgid opencode \
-    env LD_PRELOAD=/lib/libgcompat.so.0 \
     /usr/local/bin/opencode web --hostname 0.0.0.0 --port 4096

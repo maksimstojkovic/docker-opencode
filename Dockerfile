@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1.7
-FROM alpine:3.20
+FROM debian:trixie-slim
 
 ARG OPENCODE_VERSION
 ARG TARGETARCH
 ARG S6_OVERLAY_VERSION=3.2.0.2
+ARG DEBIAN_FRONTEND=noninteractive
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -17,27 +18,30 @@ ENV LANG=C.UTF-8 \
     TZ=Etc/UTC
 
 # Core runtime + artifact tooling.
-# - shadow:        provides usermod/groupmod (alpine's busybox versions lack the -o flag)
 # - bash:          opencode and various agent tool calls assume bash exists
-# - gcompat:       glibc compatibility shim. Bun (opencode's runtime) extracts a
-#                  helper .so at runtime that references glibc-only symbols like
-#                  gnu_get_libc_version; without gcompat, dlopen fails and FFI-
-#                  dependent features (session titles, summarisation) silently die.
-# - python3 + py3-matplotlib/py3-pillow: chart and image artifact generation
-#   (no py3-pip — apk packages cover what we need; runtime pip install on
-#    musl needs gcc/musl-dev and is rarely worth it)
-# - imagemagick, graphviz: image conversion + diagram rendering
+#                  (debian-slim ships /bin/sh as dash; bash is not installed by default)
+# - python3 + python3-matplotlib/python3-pil: chart and image artifact generation.
+#   apt packages cover what we need; pip wheels work cleanly on glibc if extras
+#   are needed later.
+# - imagemagick, graphviz: image conversion + diagram rendering. ImageMagick's
+#   default policy.xml blocks PDF/PS/EPS for Ghostscript-CVE reasons; relaxed
+#   below so the agent can convert those formats.
 # - git + openssh-client + ca-certificates: repo operations over SSH/HTTPS
-# - jq + ripgrep + fd: data wrangling tools the agent reaches for constantly
-RUN --mount=type=cache,target=/var/cache/apk,sharing=locked,id=apk-${TARGETARCH} \
-    --mount=type=cache,target=/etc/apk/cache,sharing=locked,id=apkcache-${TARGETARCH} \
-    apk add \
-        ca-certificates curl tar xz \
-        bash shadow tzdata gcompat \
+# - jq + ripgrep + fd-find: data wrangling tools the agent reaches for constantly.
+#   Debian renames the fd binary to fdfind; symlinked to /usr/bin/fd below.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-${TARGETARCH} \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=aptlists-${TARGETARCH} \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl tar xz-utils \
+        bash tzdata \
         git openssh-client \
-        jq ripgrep fd \
+        jq ripgrep fd-find \
         imagemagick graphviz \
-        python3 py3-matplotlib py3-pillow
+        python3 python3-matplotlib python3-pil \
+    && ln -sf /usr/bin/fdfind /usr/bin/fd \
+    && sed -i 's|<policy domain="coder" rights="none" pattern="\(PDF\|PS\|PS2\|PS3\|EPS\|XPS\)" />|<policy domain="coder" rights="read\|write" pattern="\1" />|g' /etc/ImageMagick-6/policy.xml || true
 
 # s6-overlay (linuxserver.io's init system of choice) — proper PID 1,
 # parallel service supervision, and the PUID/PGID hook pattern.
@@ -52,9 +56,14 @@ RUN set -eux; \
     curl -fsSL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" \
         | tar -Jxpf - -C /
 
+# Copy s6 service definitions and init scripts. Placed before the opencode
+# download so version bumps (most frequent change) don't invalidate this layer.
+COPY root/ /
+
 # Install opencode from upstream GitHub release.
 # Canonical upstream is anomalyco/opencode (sst/opencode redirects there).
-# Pulls the -musl variant because the base image is alpine.
+# Upstream ships the glibc binary with no suffix; the -musl variant is the
+# alpine one. We pull the unsuffixed tarball.
 RUN set -eux; \
     if [ -z "${OPENCODE_VERSION}" ]; then echo "OPENCODE_VERSION build-arg is required" >&2; exit 1; fi; \
     case "${TARGETARCH}" in \
@@ -62,22 +71,22 @@ RUN set -eux; \
         arm64)  OC_ARCH=arm64 ;; \
         *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${OC_ARCH}-musl.tar.gz" \
+    curl -fsSL "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${OC_ARCH}.tar.gz" \
         | tar -xz -C /usr/local/bin; \
     chmod +x /usr/local/bin/opencode; \
     /usr/local/bin/opencode --version
-
-# Copy s6 service definitions and init scripts.
-COPY root/ /
 
 # Create the runtime user. UID/GID get reconciled to PUID/PGID at container
 # start by /etc/cont-init.d/10-fix-perms; defaults match linuxserver.io convention.
 # Login shell is the opencode-shell wrapper (clears the PTY before exec'ing
 # bash) — see /usr/local/bin/opencode-shell for the why.
-RUN addgroup -g 1000 opencode \
-    && adduser -D -u 1000 -G opencode -h /config -s /usr/local/bin/opencode-shell opencode \
-    && mkdir -p /config /workspace /ssh \
-    && chown -R opencode:opencode /config /workspace \
+# -M skips home-dir creation because /config is a VOLUME; install -d sets
+# ownership without populating skeleton files that would shadow user data
+# on bind-mount.
+RUN groupadd -g 1000 opencode \
+    && useradd -u 1000 -g opencode -d /config -s /usr/local/bin/opencode-shell -M opencode \
+    && install -d -o opencode -g opencode -m 755 /config /workspace \
+    && mkdir -p /ssh \
     # Mark scripts executable by directory pattern so adding new cont-init
     # hooks, s6 services, opencode-* wrappers, or MCP servers doesn't
     # require Dockerfile changes — just drop the file under root/ and rebuild.
@@ -96,9 +105,10 @@ LABEL org.opencontainers.image.title="docker-opencode" \
 EXPOSE 4096
 VOLUME ["/config", "/workspace", "/ssh"]
 
-# Probe opencode's API health endpoint. wget is part of busybox so no extra
-# install is needed. --start-period gives s6 + opencode time to come up on
-# slower hardware (Pi 4 cold start ~10-15s).
+# Probe opencode's API health endpoint. curl is installed above.
+# --start-period gives s6 + opencode time to come up on slower hardware
+# (Pi 4 cold start ~10-15s). --max-time keeps the probe within the
+# healthcheck timeout.
 #
 # URL-embedded credentials let the probe authenticate when OPENCODE_SERVER_PASSWORD
 # is set. /global/health is NOT exempt from opencode's basic-auth middleware, so a
@@ -106,7 +116,7 @@ VOLUME ["/config", "/workspace", "/ssh"]
 # container would be marked unhealthy. When the password is unset, opencode skips
 # auth entirely and the empty creds are ignored.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD wget -q --spider --tries=1 \
+    CMD curl -fsS --max-time 8 -o /dev/null \
         "http://${OPENCODE_SERVER_USERNAME:-opencode}:${OPENCODE_SERVER_PASSWORD:-}@127.0.0.1:4096/global/health" \
         || exit 1
 
