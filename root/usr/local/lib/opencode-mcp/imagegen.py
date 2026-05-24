@@ -132,8 +132,6 @@ def call_openrouter(prompt, model):
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/maksimstojkovic/docker-opencode",
-            "X-Title": "docker-opencode-imagegen",
         },
     )
     try:
