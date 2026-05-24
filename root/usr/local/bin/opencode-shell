@@ -12,4 +12,17 @@
 # -t) don't emit stray escape bytes into pipes.
 [ -t 1 ] && printf '\033c'
 
+# Land in /workspace when opencode didn't pick a meaningful cwd. If the
+# user has a project selected, opencode passes its path (e.g.
+# /workspace/my-app) — respect that. Only override the "no choice" cases:
+# cwd == / (opencode's default for unscoped terminals) or cwd == $HOME
+# (some launchers default here). Skip entirely for non-tty invocations.
+if [ -t 1 ] && [ -d /workspace ]; then
+    cwd="${PWD:-$(pwd 2>/dev/null || echo /)}"
+    case "$cwd" in
+        / | "$HOME" | "") cd /workspace 2>/dev/null || true ;;
+    esac
+    unset cwd
+fi
+
 exec /bin/bash "$@"
