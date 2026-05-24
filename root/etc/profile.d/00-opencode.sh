@@ -1,0 +1,31 @@
+# shellcheck shell=sh
+# System-wide interactive-shell setup for opencode containers.
+# Sourced by /etc/profile (login shells) and /etc/bash.bashrc (bash non-login).
+# Keep POSIX-compatible — busybox ash and bash both source this.
+
+# Skip non-interactive invocations (scp/rsync/etc. choke on prompt setup).
+case $- in *i*) ;; *) return 0 ;; esac
+
+# Sane default umask so files dropped into bind-mounts stay group-readable.
+umask 022
+
+# Coloured ls when supported. Busybox ls accepts --color in recent versions;
+# fall back silently otherwise.
+if ls --color=auto / >/dev/null 2>&1; then
+    alias ls='ls --color=auto'
+fi
+
+alias ll='ls -lah'
+alias la='ls -A'
+alias l='ls -CF'
+alias ..='cd ..'
+
+# Prompt: bash supports \[ \] non-printing markers (needed so readline tracks
+# line length correctly across colours). Ash doesn't, so feed it a plain
+# version — colour sequences in ash PS1 would break line wrap.
+if [ -n "${BASH_VERSION:-}" ]; then
+    PS1='\[\e[1;32m\]\u\[\e[0m\]@\[\e[1;34m\]opencode\[\e[0m\]:\[\e[1;36m\]\w\[\e[0m\]\$ '
+else
+    PS1='\u@opencode:\w\$ '
+fi
+export PS1

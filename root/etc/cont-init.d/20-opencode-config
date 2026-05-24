@@ -1,6 +1,11 @@
-#!/usr/bin/env sh
+#!/command/with-contenv sh
 # Seed first-run opencode state under /config (the persistent bind-mount).
 # Idempotent: never overwrites user edits, only fills in missing scaffolding.
+#
+# Shebang note: /command/with-contenv is required so OPENROUTER_MODEL,
+# OPENROUTER_SMALL_MODEL, etc. from the container env reach this script.
+# Plain `env sh` strips them and the seeded opencode.json gets baked
+# defaults instead of the user's overrides.
 
 set -eu
 

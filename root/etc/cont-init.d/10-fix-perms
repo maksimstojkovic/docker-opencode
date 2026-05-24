@@ -1,24 +1,46 @@
-#!/usr/bin/env sh
+#!/command/with-contenv sh
 # Reconcile the in-image opencode user UID/GID with the host's PUID/PGID,
 # then chown the persistent bind-mounts so the agent can read/write them.
+#
+# Shebang note: MUST be /command/with-contenv — plain `env sh` runs without
+# the container's ENV (so PUID/PGID from Dockerfile are unset) and the
+# script aborts under `set -u`, leaving /workspace root-owned.
 
 set -eu
 
-# Update opencode user/group to requested IDs. -o allows non-unique (matches
-# linuxserver.io behaviour where root or another user already holds the ID).
+log() { printf '[fix-perms] %s\n' "$*"; }
+
+: "${PUID:=1000}"
+: "${PGID:=1000}"
+
+log "starting (PUID=${PUID} PGID=${PGID})"
+
 if [ "$(id -u opencode)" != "${PUID}" ]; then
+    log "remapping opencode uid $(id -u opencode) -> ${PUID}"
     usermod -o -u "${PUID}" opencode
 fi
 if [ "$(id -g opencode)" != "${PGID}" ]; then
+    log "remapping opencode gid $(id -g opencode) -> ${PGID}"
     groupmod -o -g "${PGID}" opencode
 fi
 
-chown -R opencode:opencode /config /workspace
+for dir in /config /workspace; do
+    log "chown -R opencode:opencode ${dir}"
+    if ! chown -R opencode:opencode "${dir}" 2>/tmp/fix-perms.err; then
+        log "WARN: chown ${dir} failed -- $(tr '\n' ' ' </tmp/fix-perms.err)"
+        log "      (common on Docker Desktop bind-mounts or NFS without no_root_squash)"
+    fi
+done
 
-# /ssh is the user-supplied SSH key directory. May be mounted read-only, so
-# only adjust permissions when writable.
+# /ssh holds user-supplied SSH keys. May be mounted read-only; only fix
+# perms when writable so we don't fight a deliberate ro mount.
 if [ -d /ssh ] && [ -w /ssh ]; then
+    log "tightening /ssh permissions"
+    chown -R opencode:opencode /ssh
     chmod 700 /ssh
     find /ssh -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' -exec chmod 600 {} \;
     find /ssh -maxdepth 1 -type f \( -name '*.pub' -o -name 'known_hosts' -o -name 'config' \) -exec chmod 644 {} \;
 fi
+
+rm -f /tmp/fix-perms.err
+log "complete"
