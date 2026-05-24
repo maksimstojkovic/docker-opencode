@@ -421,6 +421,37 @@ Do not edit files. Never run shell commands. Only read.
 
 Invoke as `@security-auditor look at src/auth/`.
 
+### Example: PR reviewer (corporate)
+
+```yaml
+---
+description: First-pass PR review against team standards. Read-only.
+mode: subagent
+model: corp/claude-sonnet
+permission:
+  edit:  "deny"
+  write: "deny"
+  bash:
+    "*":              "deny"
+    "git diff*":      "allow"
+    "git log*":       "allow"
+    "git show*":      "allow"
+  "github_*":         "ask"
+---
+You are reviewing a pull request. Produce:
+
+1. **Summary** — what this PR does in 2 sentences, derived from the diff
+   (not the description — descriptions lie).
+2. **Risk** — anything that touches auth, billing, migrations, or PII.
+3. **Standards** — violations of @AGENTS.md (be specific: file:line).
+4. **Suggest** — up to 3 concrete improvements. Skip nits.
+
+If the PR is < 20 lines and trivial (typo, comment, dep bump), just say
+"LGTM" with one sentence why. Don't pad.
+```
+
+Invoke as `@pr-reviewer PR #1234` once the GitHub MCP is wired up.
+
 ### Example: vision-specialised subagent
 
 ```yaml
@@ -578,6 +609,80 @@ Nothing else.
 `subtask: true` runs in a fresh subagent context, so the response
 doesn't pollute the main conversation's context window.
 
+### Example: draft a PR description from the current branch
+
+`commands/pr.md`:
+
+```yaml
+---
+description: Draft a PR title and description from the current branch's diff vs main.
+model: corp/claude-sonnet
+---
+Write a PR title (≤70 chars) and description for the changes below.
+
+Branch summary:
+!`git log --oneline origin/main..HEAD`
+
+Diff:
+!`git diff origin/main...HEAD`
+
+Linked tickets (from branch name, if any): $ARGUMENTS
+
+Structure the description as:
+## Summary
+- 2–4 bullets describing what changed and why.
+## Test plan
+- Concrete checklist of what to verify.
+## Risk
+- One line. "Low" / "Medium — touches X" / "High — see ...".
+```
+
+Invoke: `/pr PROJ-1234` and paste the output into GitHub.
+
+### Example: triage a Jira ticket
+
+`commands/ticket.md`:
+
+```yaml
+---
+description: Summarise a Jira/Linear ticket and propose next actions.
+model: corp/claude-sonnet
+---
+Pull ticket $1 via the atlassian MCP. Then return:
+
+- **What** — 1 sentence describing the request.
+- **Acceptance** — bulleted list of completion criteria, inferred if absent.
+- **Blockers** — anything that prevents work starting today.
+- **Suggested approach** — 2–4 bullets, technical not prose.
+- **Estimate** — S/M/L with one-line justification.
+```
+
+Invoke: `/ticket PROJ-4521`.
+
+### Example: on-call incident triage
+
+`commands/oncall.md`:
+
+```yaml
+---
+description: Triage an alert — pull context from Grafana, recent deploys, error logs.
+model: corp/claude-sonnet
+subtask: true
+---
+Alert: $ARGUMENTS
+
+Step 1: Find the most recent deploy to the affected service:
+!`gh api repos/$ORG/$REPO/deployments --jq '.[0]'`
+
+Step 2: Search the last 100 commits on main for related changes:
+!`git log -100 --oneline --grep="$1"`
+
+Step 3: Recommend immediate action. Choose ONE:
+- **Rollback** — if a recent deploy correlates and is the likely cause
+- **Investigate** — if no clear correlation; list 3 specific things to check
+- **Escalate** — if outside expertise; name the right owner team
+```
+
 ### Overriding built-ins
 
 Custom commands take precedence over built-ins. You can override
@@ -712,6 +817,78 @@ habit tracking):
 Now the agent can answer "what's the temperature in the living room?" or
 "turn off the office lights".
 
+### Example: Atlassian (Jira + Confluence) for corporate work
+
+```json
+{
+  "mcp": {
+    "atlassian": {
+      "type": "remote",
+      "url": "https://mcp.atlassian.com/v1/sse",
+      "headers": { "Authorization": "Bearer {env:ATLASSIAN_TOKEN}" },
+      "enabled": true
+    }
+  }
+}
+```
+
+Unlocks "summarise all open tickets assigned to me", "find every Confluence
+page about the payments service", "draft a status update from this sprint's
+done column".
+
+### Example: GitHub / GitHub Enterprise MCP
+
+```json
+{
+  "mcp": {
+    "github": {
+      "type": "local",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "environment": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "{env:GITHUB_TOKEN}",
+        "GITHUB_API_URL": "https://github.your-corp.com/api/v3"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+The same server works for `github.com` (drop `GITHUB_API_URL`) or GHE.
+Lets the agent read PRs, review diffs, post comments, triage issues.
+
+### Example: internal LLM gateway (LiteLLM / corporate proxy)
+
+Many corps force model traffic through a central gateway that handles
+auth, audit, and budget. Wire it as a custom OpenAI-compatible provider:
+
+```json
+{
+  "provider": {
+    "corp": {
+      "npm":     "@ai-sdk/openai-compatible",
+      "name":    "Corporate LLM Gateway",
+      "options": {
+        "baseURL": "https://llm-gateway.corp.example.com/v1",
+        "apiKey":  "{env:CORP_GATEWAY_TOKEN}",
+        "headers": {
+          "X-Cost-Center": "{env:COST_CENTER}",
+          "X-User":        "{env:USER}"
+        }
+      },
+      "models": {
+        "claude-sonnet": { "name": "Claude Sonnet (gateway)" },
+        "gpt-4.1":       { "name": "GPT 4.1 (gateway)" }
+      }
+    }
+  },
+  "model": "corp/claude-sonnet"
+}
+```
+
+Cost-centre and user headers travel on every call — finance can chargeback
+correctly and security has an audit trail.
+
 ### Per-agent MCP enablement
 
 In an agent file you can disable entire MCP namespaces:
@@ -793,6 +970,21 @@ in.
   so it doesn't try to attach for non-code conversations.
 - **Workspace folders** — point opencode at the repo root, not subdirs.
   Many LSPs (TypeScript, gopls) walk up to find project boundaries.
+
+### Common use cases
+
+The scenarios where wiring up an LSP actually changes the outcome:
+
+| Scenario                                | What LSP unlocks                                                |
+| --------------------------------------- | --------------------------------------------------------------- |
+| Refactoring across a TS/JS monorepo     | Accurate find-references and rename; agent stops missing call sites |
+| Onboarding into an unfamiliar Rust/Go repo | Hover types, go-to-definition; agent navigates by symbol, not grep |
+| "Why won't this compile?" debugging     | Live diagnostics — agent sees the same errors `tsc`/`pyright` does |
+| Pre-commit verification                 | Agent confirms its own edits typecheck before declaring done    |
+| Adding a method to a class              | Knows existing signatures and avoids name collisions            |
+
+If your opencode is purely a chat replacement, skip this section entirely
+and `"lsp": "deny"` in your chat agents.
 
 ---
 
@@ -911,6 +1103,93 @@ export const WeatherPlugin = async () => ({
 
 Now the model can call `get_weather({ city: "Sydney" })` like any other tool.
 
+### Example: auto-archive every assistant reply to a daily journal
+
+```typescript
+import { appendFile, mkdir } from "node:fs/promises"
+import { join } from "node:path"
+
+export const JournalPlugin = async () => ({
+  "session.updated": async (input) => {
+    const last = input.messages?.at(-1)
+    if (last?.role !== "assistant") return
+    const day = new Date().toISOString().slice(0, 10)
+    const dir = "/config/journal"
+    await mkdir(dir, { recursive: true })
+    await appendFile(
+      join(dir, `${day}.md`),
+      `\n\n## ${new Date().toISOString()} — ${input.title}\n\n${last.content}\n`
+    )
+  }
+})
+```
+
+Drop into `~/.config/opencode/plugins/journal.ts` and every reply lands
+in a dated markdown file — searchable, greppable, backupable.
+
+### Example: route through Helicone for observability
+
+```typescript
+export const HeliconePlugin = async () => ({
+  "shell.env": async (_input, output) => {
+    output.env.OPENROUTER_BASE_URL = "https://oai.helicone.ai/v1"
+    output.env.HELICONE_AUTH = `Bearer ${process.env.HELICONE_API_KEY}`
+  }
+})
+```
+
+Rewriting the provider base URL via env injection pipes all model calls
+through Helicone's proxy so you get token, latency, and cost dashboards
+per session — useful when you're tuning prompts or hunting waste.
+
+### Example: audit log every tool call to syslog (corporate)
+
+```typescript
+import { appendFile } from "node:fs/promises"
+
+const AUDIT = process.env.OPENCODE_AUDIT_LOG || "/var/log/opencode/audit.jsonl"
+
+export const AuditPlugin = async () => ({
+  "tool.execute.before": async (input) => {
+    await appendFile(AUDIT, JSON.stringify({
+      ts:        new Date().toISOString(),
+      user:      process.env.USER,
+      session:   input.sessionID,
+      tool:      input.tool,
+      args:      input.args,
+      phase:     "before"
+    }) + "\n")
+  },
+  "tool.execute.after": async (input, output) => {
+    await appendFile(AUDIT, JSON.stringify({
+      ts:        new Date().toISOString(),
+      user:      process.env.USER,
+      session:   input.sessionID,
+      tool:      input.tool,
+      ok:        !output.error,
+      error:     output.error?.message,
+      phase:     "after"
+    }) + "\n")
+  }
+})
+```
+
+Ship the JSONL to your SIEM (Splunk, Datadog, ELK) via a sidecar.
+Satisfies "who ran what tool, when" for SOC 2 / ISO 27001 evidence.
+
+### Common use cases
+
+| Goal                              | Hook(s)                              | Pattern                                          |
+| --------------------------------- | ------------------------------------ | ------------------------------------------------ |
+| Notify when long task finishes    | `session.idle`                       | `curl` to ntfy / Telegram / Pushover             |
+| Block specific dangerous commands | `tool.execute.before`                | Pattern-match args, set `output.deny = true`     |
+| Inject secrets into shell calls   | `shell.env`                          | Mutate `output.env` without exposing in config   |
+| Audit log of every tool call      | `tool.execute.after`                 | Append to a JSONL file with timestamp + args     |
+| Archive assistant output          | `session.updated`                    | Append latest assistant message to disk          |
+| Add custom domain tools           | (tools export)                       | Zod schema + `execute` — no MCP server needed    |
+| Observability proxy               | `shell.env`                          | Override provider base URL with proxy endpoint   |
+| Auto-tag sessions                 | `session.created`                    | Call `client` to set title from cwd / git branch |
+
 ---
 
 ## Permissions
@@ -1015,6 +1294,71 @@ Cursor's `.cursorrules`):
 
 The model sees these on every session. Keep them tight — every byte
 costs context.
+
+### Common use cases
+
+For a chat-replacement self-host, instructions are mostly about *you*,
+not a codebase. Split into multiple files under `.opencode/rules/` and
+glob them in — easier to edit and disable individually.
+
+**Personal context (`rules/about-me.md`)** — who you are so the model
+stops asking:
+
+```markdown
+- Based in Sydney, Australia (AEST/AEDT). All times in 24h.
+- Work in platform engineering; comfortable with Linux, Docker, networks.
+- Prefer concrete examples over abstract explanations.
+```
+
+**Response style (`rules/style.md`)** — how you want it to talk:
+
+```markdown
+- Skip preamble. No "great question", no "I'd be happy to".
+- Answer directly first, then expand only if asked.
+- Use markdown tables for comparisons of 3+ items.
+- Cite sources with inline `[domain]` markers when using web search.
+- Avoid hedging ("might", "perhaps", "it depends") unless genuinely uncertain.
+```
+
+**Privacy guardrails (`rules/privacy.md`)** — what not to leak:
+
+```markdown
+- Do not send personal email, calendar, or filesystem contents to web search.
+- Treat anything from the `personal_*` MCP namespace as confidential.
+- Never include API keys, tokens, or `.env` contents in responses verbatim.
+```
+
+**Output conventions (`rules/output.md`)** — for headless / cron use:
+
+```markdown
+- When invoked headlessly (no TTY), output plain text only — no ANSI codes.
+- Briefings should fit a phone notification (≤500 chars) unless asked to expand.
+- Dates always ISO-8601 (`2026-05-24`), never US-format.
+```
+
+**Corporate context (`rules/corp.md`)** — for team/company self-hosts:
+
+```markdown
+- Audience is internal engineering at $COMPANY. Assume familiarity with our stack:
+  Go services, Kafka, Postgres, k8s on EKS, Terraform.
+- Data classification: anything touched via `atlassian_*`, `github_*`,
+  `gmail_*`, or paths under `/workspace/internal/` is **Confidential**.
+  Never include verbatim Confidential content in `websearch` or `webfetch` args.
+- When drafting external-facing content (customer email, support reply,
+  marketing copy), call it out explicitly and use the brand voice in
+  @docs/brand-voice.md.
+- Code suggestions must follow @docs/engineering-standards.md.
+  Tests required for any non-trivial behaviour change.
+- For incident or production work, default to read-only investigation.
+  Any write/exec against prod requires explicit human "yes do it" — never
+  infer permission from earlier turns in the session.
+```
+
+Wire them all in:
+
+```json
+"instructions": [".opencode/rules/*.md"]
+```
 
 ---
 
@@ -1205,6 +1549,82 @@ With a Home Assistant MCP attached, ad-hoc phrases work:
 
 > "I'm leaving for work" → agent calls homeassist_run_script("leaving_routine")
 > "What's the temperature upstairs?" → agent calls homeassist_get_state(...)
+
+### Pattern 9 — Auto-review every PR (corporate)
+
+GitHub Actions runs opencode headlessly on every PR open / push:
+
+```yaml
+# .github/workflows/opencode-review.yml
+on:
+  pull_request:
+    types: [opened, synchronize]
+jobs:
+  review:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: |
+          docker run --rm \
+            -e GITHUB_TOKEN \
+            -e CORP_GATEWAY_TOKEN \
+            -v $PWD:/workspace \
+            opencode:latest \
+            run "@pr-reviewer PR #${{ github.event.number }}" \
+              --output text \
+            | gh pr comment ${{ github.event.number }} --body-file -
+```
+
+Catches obvious issues before a human looks. Tuned via `agents/pr-reviewer.md`
+and `rules/engineering-standards.md` — no code changes, just markdown.
+
+### Pattern 10 — Knowledge-base Q&A over Confluence + Drive
+
+Primary agent with `atlassian_*` + `drive_*` MCPs, plus a chat-only persona:
+
+> "What's our policy on third-party model training?" →
+> agent searches Confluence + Drive, returns the answer with source links
+> (`[Confluence: Security/Vendor-Review-2025]`).
+
+Replaces "ask in #help-it" for the 80% of FAQs that already have a written
+answer somewhere nobody can find.
+
+### Pattern 11 — Weekly status report from sprint activity
+
+Cron + headless, posts to Slack via webhook:
+
+```cron
+0 16 * * 5 docker exec opencode opencode run "/sprint-report" \
+    --agent agent --output text \
+    | curl -X POST -H 'Content-type: application/json' \
+        --data "{\"text\": \"$(cat -)\"}" \
+        $SLACK_WEBHOOK_URL
+```
+
+`commands/sprint-report.md` pulls done tickets from Jira, merged PRs from
+GitHub, and summarises into "shipped / in-flight / blocked" for your team.
+
+### Pattern 12 — On-call assistant in Slack
+
+Slack MCP receives DMs to a bot user, pipes to a `oncall` agent with
+Grafana + GitHub + runbook MCPs attached:
+
+> "p99 on payments spiked 5 min ago" →
+> agent pulls dashboard, recent deploys, related runbook section, suggests
+> rollback vs investigate, links the deploy PR.
+
+Replaces "who knows about payments?" pings during an incident.
+
+### Pattern 13 — DLP guardrail on external sends
+
+A plugin watches `tool.execute.before` for `webfetch`, `websearch`, and
+external MCP namespaces. If the args contain content from a Confidential
+source (matched against a regex or classifier), it sets `output.deny = true`
+and `output.reason = "DLP: Confidential content in external call"`.
+
+Lets you safely give the agent both internal and external tools without
+worrying about cross-contamination.
 
 ---
 
