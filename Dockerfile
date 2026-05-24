@@ -37,6 +37,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-${TARGETARCH}
         ca-certificates curl tar xz-utils \
         bash tzdata \
         git openssh-client \
+        nano vim \
         jq ripgrep fd-find \
         imagemagick graphviz \
         python3 python3-matplotlib python3-pil \
