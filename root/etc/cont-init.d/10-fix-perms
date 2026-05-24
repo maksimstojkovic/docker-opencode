@@ -32,14 +32,19 @@ for dir in /config /workspace; do
     fi
 done
 
-# /ssh holds user-supplied SSH keys. May be mounted read-only; only fix
-# perms when writable so we don't fight a deliberate ro mount.
-if [ -d /ssh ] && [ -w /ssh ]; then
-    log "tightening /ssh permissions"
+# /ssh holds user-supplied SSH keys. Read-only mounts are a recommended
+# setup (host owns the keys, container reads only), so detect that case
+# and skip silently. `[ -w ]` reports writable for root even on ro mounts
+# thanks to CAP_DAC_OVERRIDE, so probe with an actual write attempt.
+if [ -d /ssh ] && touch /ssh/.fix-perms-probe 2>/dev/null; then
+    rm -f /ssh/.fix-perms-probe
+    log "tightening /ssh permissions (mount is writable)"
     chown -R opencode:opencode /ssh
     chmod 700 /ssh
     find /ssh -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' -exec chmod 600 {} \;
     find /ssh -maxdepth 1 -type f \( -name '*.pub' -o -name 'known_hosts' -o -name 'config' \) -exec chmod 644 {} \;
+elif [ -d /ssh ]; then
+    log "/ssh is read-only — leaving host permissions intact (recommended for key material)"
 fi
 
 rm -f /tmp/fix-perms.err

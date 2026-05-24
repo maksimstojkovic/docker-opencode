@@ -29,3 +29,19 @@ else
     PS1='\u@opencode:\w\$ '
 fi
 export PS1
+
+# Workaround for opencode's web-terminal "+" button leaking the previous
+# tab's buffer into a freshly opened tab. Clearing on shell init wipes the
+# visible ghost text before the user sees it. Guards:
+#   -t 1     : stdout must be a tty (skip docker exec, pipes, etc.)
+#   $TMUX    : don't clobber an existing tmux session
+#   $STY     : same for GNU screen
+#   $TERM    : need a sane terminfo entry for `clear` to work
+case "${TERM:-dumb}" in
+    dumb|screen*|tmux*) ;;
+    *)
+        if [ -t 1 ] && [ -z "${TMUX:-}" ] && [ -z "${STY:-}" ]; then
+            clear 2>/dev/null || true
+        fi
+        ;;
+esac
