@@ -17,7 +17,8 @@ DEFAULT_MODEL = os.environ.get(
     "IMAGEGEN_DEFAULT_MODEL",
     "google/gemini-3.1-flash-image-preview",
 )
-OUTPUT_ROOT = Path("/workspace/.opencode/generated")
+WORKSPACE_ROOT = Path(os.environ.get("IMAGEGEN_WORKSPACE_ROOT", "/workspace")).resolve()
+OUTPUT_SUBDIR = ".images"
 REQUEST_TIMEOUT = 180
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "imagegen"
@@ -64,8 +65,10 @@ def handle_tools_list(req_id, _params):
             "name": "generate_image",
             "description": (
                 "Generate an image from a text prompt via OpenRouter. "
-                "Saves to /workspace/.opencode/generated/<YYYY-MM-DD>/ and "
-                "returns the path plus the image inline. "
+                f"Saves to <directory>/{OUTPUT_SUBDIR}/<YYYY-MM-DD>/ and returns "
+                "the path plus the image inline. Pass 'directory' as the absolute "
+                f"path of the active project so images land inside it; falls back to "
+                f"{WORKSPACE_ROOT}/{OUTPUT_SUBDIR} otherwise. "
                 f"Default model: {DEFAULT_MODEL}."
             ),
             "inputSchema": {
@@ -79,6 +82,15 @@ def handle_tools_list(req_id, _params):
                         "type": "string",
                         "description": f"OpenRouter image-output model id. Default: {DEFAULT_MODEL}.",
                         "default": DEFAULT_MODEL,
+                    },
+                    "directory": {
+                        "type": "string",
+                        "description": (
+                            "Absolute path of the active project/workspace. "
+                            f"Image is saved under <directory>/{OUTPUT_SUBDIR}/. "
+                            f"Must resolve inside {WORKSPACE_ROOT}; otherwise falls "
+                            f"back to {WORKSPACE_ROOT}/{OUTPUT_SUBDIR}."
+                        ),
                     },
                 },
                 "required": ["prompt"],
@@ -98,12 +110,13 @@ def handle_tools_call(req_id, params):
         send_error(req_id, -32602, "argument 'prompt' is required and must be a string")
         return
     model = args.get("model") or DEFAULT_MODEL
+    project_dir = resolve_project_dir(args.get("directory"))
 
-    log(f"generate_image model={model} prompt={prompt[:80]!r}")
+    log(f"generate_image model={model} dir={project_dir} prompt={prompt[:80]!r}")
     try:
         response = call_openrouter(prompt, model)
         b64, mime = extract_image(response)
-        out_path = save_image(b64, mime)
+        out_path = save_image(b64, mime, project_dir)
         log(f"saved {out_path}")
         send_result(req_id, {
             "content": [
@@ -188,8 +201,24 @@ def _from_data_uri_or_url(url):
     return base64.b64encode(data).decode("ascii"), mime
 
 
-def save_image(b64data, mime):
-    out_dir = OUTPUT_ROOT / datetime.date.today().isoformat()
+def resolve_project_dir(raw):
+    # Sandbox to WORKSPACE_ROOT so a hallucinated path can't drop files in /etc.
+    if raw and isinstance(raw, str):
+        try:
+            candidate = Path(raw).resolve()
+            if candidate == WORKSPACE_ROOT or WORKSPACE_ROOT in candidate.parents:
+                if candidate.is_dir():
+                    return candidate
+                log(f"directory {candidate} does not exist, falling back to {WORKSPACE_ROOT}")
+            else:
+                log(f"directory {candidate} outside {WORKSPACE_ROOT}, falling back")
+        except (OSError, ValueError) as e:
+            log(f"could not resolve directory {raw!r}: {e}")
+    return WORKSPACE_ROOT
+
+
+def save_image(b64data, mime, project_dir):
+    out_dir = project_dir / OUTPUT_SUBDIR / datetime.date.today().isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%H%M%S-%f")[:-3]
     out_path = out_dir / f"{ts}.{EXT_BY_MIME.get(mime, 'bin')}"
@@ -210,7 +239,7 @@ HANDLERS = {
 
 
 def main():
-    log(f"starting (default={DEFAULT_MODEL}, output={OUTPUT_ROOT})")
+    log(f"starting (default={DEFAULT_MODEL}, workspace={WORKSPACE_ROOT}, subdir={OUTPUT_SUBDIR})")
     for line in sys.stdin:
         line = line.strip()
         if not line:
