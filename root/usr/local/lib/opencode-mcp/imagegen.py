@@ -30,7 +30,12 @@ import urllib.request
 from pathlib import Path
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "google/gemini-2.5-flash-image-preview"
+# Google's current image-gen model on OpenRouter (aka "Nano Banana 2"). Update
+# this slug when Google ships the next preview; OpenRouter doesn't expose a
+# stable `-latest` alias for image-preview models, so the family slug here
+# tracks the current preview version. If this 404s, try the date-pinned
+# variant: google/gemini-3.1-flash-image-preview-20260226
+DEFAULT_MODEL = "google/gemini-3.1-flash-image-preview"
 OUTPUT_ROOT = Path("/workspace/.opencode/generated")
 REQUEST_TIMEOUT = 180  # seconds — image gen can be slow
 PROTOCOL_VERSION = "2024-11-05"
@@ -83,9 +88,9 @@ def handle_tools_list(req_id, _params):
                 "Generate an image from a text prompt via OpenRouter. "
                 "Saves the result to /workspace/.opencode/generated/<YYYY-MM-DD>/ "
                 "and returns the file path plus the image inline. "
-                f"Default model: {DEFAULT_MODEL}. "
-                "Other useful models: openai/gpt-image-1, "
-                "black-forest-labs/flux-1.1-pro."
+                f"Default model: {DEFAULT_MODEL} (Google Nano Banana 2). "
+                "Other useful image models: openai/gpt-5.4-image-2 "
+                "(GPT-driven, strong text-in-image)."
             ),
             "inputSchema": {
                 "type": "object",
