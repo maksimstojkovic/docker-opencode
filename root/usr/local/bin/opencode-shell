@@ -1,10 +1,16 @@
 #!/bin/sh
 # Pre-shell wrapper invoked as opencode user's login shell.
 #
-# TEMP: RIS (\033c) buffer-flash workaround removed to test whether the
-# Debian/glibc switch resolves opencode's ghost-text bug on new "+" tabs.
-# Restore with: git checkout -- root/usr/local/bin/opencode-shell
-#               git checkout -- root/etc/profile.d/00-opencode.sh
+# Purpose: opencode's web terminal leaks the previous tab's rendered
+# buffer into a freshly opened "+" tab. Bash startup + profile loading
+# takes 50-100ms, long enough for the ghost text to flash before our
+# profile.d `clear` lands. Issuing RIS (\033c — full terminal reset)
+# as the launcher's first action gets the clear escape down the PTY
+# within ~5ms of allocation, eliminating the flash.
+#
+# Guarded on `-t 1` so non-tty invocations (scp, sftp, exec without
+# -t) don't emit stray escape bytes into pipes.
+[ -t 1 ] && printf '\033c'
 
 # Land in /workspace when opencode didn't pick a meaningful cwd. If the
 # user has a project selected, opencode passes its path (e.g.
