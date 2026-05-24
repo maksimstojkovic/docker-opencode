@@ -52,51 +52,62 @@ def send_error(req_id, code, message):
 
 
 def handle_initialize(req_id, _params):
-    send_result(req_id, {
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {"tools": {}},
-        "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-    })
+    send_result(
+        req_id,
+        {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+        },
+    )
 
 
 def handle_tools_list(req_id, _params):
-    send_result(req_id, {
-        "tools": [{
-            "name": "generate_image",
-            "description": (
-                "Generate an image from a text prompt via OpenRouter. "
-                f"Saves to <directory>/{OUTPUT_SUBDIR}/<YYYY-MM-DD>/ and returns "
-                "the path plus the image inline. Pass 'directory' as the absolute "
-                f"path of the active project so images land inside it; falls back to "
-                f"{WORKSPACE_ROOT}/{OUTPUT_SUBDIR} otherwise. "
-                f"Default model: {DEFAULT_MODEL}."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "Text prompt describing the image.",
+    send_result(
+        req_id,
+        {
+            "tools": [
+                {
+                    "name": "generate_image",
+                    "description": (
+                        "Generate ONE image from a text prompt via OpenRouter. "
+                        "Call this tool exactly once per user request — do NOT call it "
+                        "multiple times to produce variations unless the user explicitly "
+                        "asks for multiple images or alternative versions. "
+                        f"Saves to <directory>/{OUTPUT_SUBDIR}/<YYYY-MM-DD>/ and returns "
+                        "the path plus the image inline. Pass 'directory' as the absolute "
+                        f"path of the active project so images land inside it; falls back to "
+                        f"{WORKSPACE_ROOT}/{OUTPUT_SUBDIR} otherwise. "
+                        f"Default model: {DEFAULT_MODEL}."
+                    ),
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {
+                                "type": "string",
+                                "description": "Text prompt describing the image.",
+                            },
+                            "model": {
+                                "type": "string",
+                                "description": f"OpenRouter image-output model id. Default: {DEFAULT_MODEL}.",
+                                "default": DEFAULT_MODEL,
+                            },
+                            "directory": {
+                                "type": "string",
+                                "description": (
+                                    "Absolute path of the active project/workspace. "
+                                    f"Image is saved under <directory>/{OUTPUT_SUBDIR}/. "
+                                    f"Must resolve inside {WORKSPACE_ROOT}; otherwise falls "
+                                    f"back to {WORKSPACE_ROOT}/{OUTPUT_SUBDIR}."
+                                ),
+                            },
+                        },
+                        "required": ["prompt"],
                     },
-                    "model": {
-                        "type": "string",
-                        "description": f"OpenRouter image-output model id. Default: {DEFAULT_MODEL}.",
-                        "default": DEFAULT_MODEL,
-                    },
-                    "directory": {
-                        "type": "string",
-                        "description": (
-                            "Absolute path of the active project/workspace. "
-                            f"Image is saved under <directory>/{OUTPUT_SUBDIR}/. "
-                            f"Must resolve inside {WORKSPACE_ROOT}; otherwise falls "
-                            f"back to {WORKSPACE_ROOT}/{OUTPUT_SUBDIR}."
-                        ),
-                    },
-                },
-                "required": ["prompt"],
-            },
-        }]
-    })
+                }
+            ]
+        },
+    )
 
 
 def handle_tools_call(req_id, params):
@@ -118,12 +129,15 @@ def handle_tools_call(req_id, params):
         b64, mime = extract_image(response)
         out_path = save_image(b64, mime, project_dir)
         log(f"saved {out_path}")
-        send_result(req_id, {
-            "content": [
-                {"type": "text", "text": f"Image saved to {out_path}"},
-                {"type": "image", "data": b64, "mimeType": mime},
-            ]
-        })
+        send_result(
+            req_id,
+            {
+                "content": [
+                    {"type": "text", "text": f"Image saved to {out_path}"},
+                    {"type": "image", "data": b64, "mimeType": mime},
+                ]
+            },
+        )
     except Exception as e:
         log(f"error: {e}")
         send_error(req_id, -32603, str(e))
@@ -165,7 +179,7 @@ def extract_image(response):
     except (KeyError, IndexError, TypeError):
         raise RuntimeError(_short(f"no choices[0].message in response: {response}"))
 
-    for img in (msg.get("images") or []):
+    for img in msg.get("images") or []:
         url = (img.get("image_url") or {}).get("url") if isinstance(img, dict) else None
         if url:
             return _from_data_uri_or_url(url)
