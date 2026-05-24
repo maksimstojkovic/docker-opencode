@@ -30,6 +30,30 @@ else
 fi
 export PS1
 
-# Note: the web-terminal ghost-text clear is handled earlier by
-# /usr/local/bin/opencode-shell (the login-shell wrapper) so it fires
-# before bash startup overhead. No need to duplicate it here.
+# opencode's web terminal exec's /bin/bash directly (bypassing the user's
+# login shell from /etc/passwd), so /usr/local/bin/opencode-shell never
+# runs for web-spawned terminals. This rc file IS sourced (via Alpine's
+# /etc/bash.bashrc -> profile.d chain for interactive non-login bash),
+# so it's the only reliable place to handle clear + cwd.
+case "${TERM:-dumb}" in
+    dumb|screen*|tmux*) ;;
+    *)
+        if [ -t 1 ] && [ -z "${TMUX:-}" ] && [ -z "${STY:-}" ]; then
+            # RIS (full reset) — masks the ghost text opencode leaks into
+            # freshly opened "+" tabs. Heavier than `clear` but needed:
+            # the bug also leaves termios in a weird state (\n without \r),
+            # and RIS resets that too.
+            printf '\033c'
+        fi
+        ;;
+esac
+
+# Land in /workspace when no meaningful cwd was passed. Respect any path
+# under /workspace (per-project terminals) so opening a project in opencode
+# still drops the terminal in that project dir.
+if [ -t 1 ] && [ -d /workspace ]; then
+    case "${PWD:-/}" in
+        /workspace|/workspace/*) ;;
+        *) cd /workspace 2>/dev/null || true ;;
+    esac
+fi
