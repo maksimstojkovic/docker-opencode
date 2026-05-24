@@ -1,24 +1,5 @@
 #!/usr/bin/env python3
-"""
-OpenRouter image-generation MCP server (stdio transport).
-
-Exposes a single tool, `generate_image`, that calls OpenRouter's image-capable
-chat completions endpoint and saves the result to /workspace/.opencode/generated/.
-
-Stdlib only — no pip dependencies, runs against Alpine's python3 as-is.
-Logs to stderr (stdout is reserved for the MCP JSON-RPC protocol).
-
-Wire it into opencode.json:
-
-    "mcp": {
-      "imagegen": {
-        "type": "local",
-        "command": ["python3", "/usr/local/lib/opencode-mcp/imagegen.py"],
-        "environment": { "OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}" },
-        "enabled": true
-      }
-    }
-"""
+"""OpenRouter image-generation MCP server (stdio transport, stdlib-only)."""
 
 import base64
 import datetime
@@ -30,14 +11,14 @@ import urllib.request
 from pathlib import Path
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-# Google's current image-gen model on OpenRouter (aka "Nano Banana 2"). Update
-# this slug when Google ships the next preview; OpenRouter doesn't expose a
-# stable `-latest` alias for image-preview models, so the family slug here
-# tracks the current preview version. If this 404s, try the date-pinned
-# variant: google/gemini-3.1-flash-image-preview-20260226
-DEFAULT_MODEL = "google/gemini-3.1-flash-image-preview"
+# Env override > hardcoded fallback. OpenRouter has no stable -latest alias
+# for image-preview models, so bump the fallback when Google ships the next one.
+DEFAULT_MODEL = os.environ.get(
+    "IMAGEGEN_DEFAULT_MODEL",
+    "google/gemini-3.1-flash-image-preview",
+)
 OUTPUT_ROOT = Path("/workspace/.opencode/generated")
-REQUEST_TIMEOUT = 180  # seconds — image gen can be slow
+REQUEST_TIMEOUT = 180
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "imagegen"
 SERVER_VERSION = "0.1.0"
@@ -51,9 +32,8 @@ EXT_BY_MIME = {
 }
 
 
-# --- stdio MCP plumbing -----------------------------------------------------
-
 def log(msg):
+    # stderr only — stdout is reserved for the JSON-RPC protocol.
     print(f"[imagegen] {msg}", file=sys.stderr, flush=True)
 
 
@@ -70,8 +50,6 @@ def send_error(req_id, code, message):
     send({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
 
 
-# --- MCP method handlers ----------------------------------------------------
-
 def handle_initialize(req_id, _params):
     send_result(req_id, {
         "protocolVersion": PROTOCOL_VERSION,
@@ -86,25 +64,20 @@ def handle_tools_list(req_id, _params):
             "name": "generate_image",
             "description": (
                 "Generate an image from a text prompt via OpenRouter. "
-                "Saves the result to /workspace/.opencode/generated/<YYYY-MM-DD>/ "
-                "and returns the file path plus the image inline. "
-                f"Default model: {DEFAULT_MODEL} (Google Nano Banana 2). "
-                "Other useful image models: openai/gpt-5.4-image-2 "
-                "(GPT-driven, strong text-in-image)."
+                "Saves to /workspace/.opencode/generated/<YYYY-MM-DD>/ and "
+                "returns the path plus the image inline. "
+                f"Default model: {DEFAULT_MODEL}."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "Text prompt describing the image to generate.",
+                        "description": "Text prompt describing the image.",
                     },
                     "model": {
                         "type": "string",
-                        "description": (
-                            "OpenRouter model id. Defaults to "
-                            f"{DEFAULT_MODEL}. Must be an image-output model."
-                        ),
+                        "description": f"OpenRouter image-output model id. Default: {DEFAULT_MODEL}.",
                         "default": DEFAULT_MODEL,
                     },
                 },
@@ -115,9 +88,8 @@ def handle_tools_list(req_id, _params):
 
 
 def handle_tools_call(req_id, params):
-    name = params.get("name")
-    if name != "generate_image":
-        send_error(req_id, -32602, f"unknown tool: {name}")
+    if params.get("name") != "generate_image":
+        send_error(req_id, -32602, f"unknown tool: {params.get('name')}")
         return
 
     args = params.get("arguments") or {}
@@ -132,37 +104,31 @@ def handle_tools_call(req_id, params):
         response = call_openrouter(prompt, model)
         b64, mime = extract_image(response)
         out_path = save_image(b64, mime)
-        log(f"saved {out_path} ({len(b64) * 3 // 4} bytes)")
+        log(f"saved {out_path}")
         send_result(req_id, {
             "content": [
                 {"type": "text", "text": f"Image saved to {out_path}"},
                 {"type": "image", "data": b64, "mimeType": mime},
             ]
         })
-    except Exception as e:  # noqa: BLE001 — propagate as MCP error
+    except Exception as e:
         log(f"error: {e}")
         send_error(req_id, -32603, str(e))
 
 
-# --- OpenRouter call + response parsing -------------------------------------
-
 def call_openrouter(prompt, model):
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY env var is not set in the MCP process")
+        raise RuntimeError("OPENROUTER_API_KEY not set in MCP process env")
 
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        # Tell OpenRouter we want both image and text back. For image-only
-        # models this is harmless; for hybrid models it allows the assistant
-        # to caption alongside the image.
         "modalities": ["image", "text"],
     }
-    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         OPENROUTER_URL,
-        data=body,
+        data=json.dumps(payload).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -181,25 +147,18 @@ def call_openrouter(prompt, model):
 
 
 def extract_image(response):
-    """
-    Image-output providers differ in shape; try the patterns we know:
-      1. message.images[].image_url.url   (Gemini-style via OpenRouter)
-      2. message.content[].image_url.url  (OpenAI multimodal-content style)
-      3. message.content[].source.data    (Anthropic-style base64)
-    Returns (base64_data, mime_type).
-    """
+    # Try the three known response shapes: Gemini-style (message.images[]),
+    # OpenAI multimodal content (message.content[].image_url), Anthropic base64.
     try:
         msg = response["choices"][0]["message"]
     except (KeyError, IndexError, TypeError):
         raise RuntimeError(_short(f"no choices[0].message in response: {response}"))
 
-    # Pattern 1
     for img in (msg.get("images") or []):
         url = (img.get("image_url") or {}).get("url") if isinstance(img, dict) else None
         if url:
             return _from_data_uri_or_url(url)
 
-    # Pattern 2 & 3
     content = msg.get("content")
     if isinstance(content, list):
         for part in content:
@@ -213,9 +172,7 @@ def extract_image(response):
                 if src.get("type") == "base64" and src.get("data"):
                     return src["data"], src.get("media_type") or "image/png"
 
-    raise RuntimeError(_short(
-        f"no image data found in any known location. Full response: {response}"
-    ))
+    raise RuntimeError(_short(f"no image data in response: {response}"))
 
 
 def _from_data_uri_or_url(url):
@@ -226,7 +183,6 @@ def _from_data_uri_or_url(url):
             raise RuntimeError(f"malformed data URI: {url[:80]!r}")
         mime = header[5:].split(";")[0] or "image/png"
         return b64, mime
-    # External URL — download and base64-encode.
     log(f"downloading image URL: {url[:120]}")
     with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT) as r:
         data = r.read()
@@ -235,12 +191,10 @@ def _from_data_uri_or_url(url):
 
 
 def save_image(b64data, mime):
-    today = datetime.date.today().isoformat()
-    out_dir = OUTPUT_ROOT / today
+    out_dir = OUTPUT_ROOT / datetime.date.today().isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%H%M%S-%f")[:-3]
-    ext = EXT_BY_MIME.get(mime, "bin")
-    out_path = out_dir / f"{ts}.{ext}"
+    out_path = out_dir / f"{ts}.{EXT_BY_MIME.get(mime, 'bin')}"
     out_path.write_bytes(base64.b64decode(b64data))
     return out_path
 
@@ -250,8 +204,6 @@ def _short(s, n=600):
     return s if len(s) <= n else s[:n] + "...(truncated)"
 
 
-# --- main loop --------------------------------------------------------------
-
 HANDLERS = {
     "initialize": handle_initialize,
     "tools/list": handle_tools_list,
@@ -260,7 +212,7 @@ HANDLERS = {
 
 
 def main():
-    log(f"starting (default model: {DEFAULT_MODEL}, output: {OUTPUT_ROOT})")
+    log(f"starting (default={DEFAULT_MODEL}, output={OUTPUT_ROOT})")
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -275,7 +227,6 @@ def main():
         req_id = msg.get("id")
         params = msg.get("params") or {}
 
-        # Notifications (no id) — no response expected.
         if req_id is None:
             log(f"notification: {method}")
             continue
@@ -287,7 +238,7 @@ def main():
 
         try:
             handler(req_id, params)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log(f"handler exception in {method}: {e}")
             send_error(req_id, -32603, f"internal error: {e}")
 
